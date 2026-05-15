@@ -4,17 +4,642 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser
-from .serializers import CustomerSerializer
-
+from .serializers import CustomerSerializer, ProductVariantSerializer
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
+import uuid
+
+from django.db import transaction
+
+from rest_framework.parsers import (
+    MultiPartParser,
+    FormParser
+)
+
+from .models import (
+        Product,
+        ProductVariant,
+        Category,
+        Brand,
+        Address,
+        Cart,
+        CartItem,
+        Wishlist,
+        Coupon,
+        Order,
+        OrderItem,
+        Payment,
+        Review,
+)
+
+from .serializers import (
+        ProductSerializer,
+        ProductVariantSerializer,
+        CategorySerializer,
+        BrandSerializer,
+        AddressSerializer,
+        CartSerializer,
+        CartItemSerializer,
+        WishlistSerializer,
+        CouponSerializer,
+        OrderSerializer,
+        OrderItemSerializer,
+        PaymentSerializer,
+        ReviewSerializer,
+)
 
 
-from .models import Product
-from .serializers import ProductSerializer
+class ReviewListCreateView(APIView):
 
-from .models import Category
-from .serializers import CategorySerializer
+    permission_classes = [IsAuthenticated]
 
+
+    def get(self, request):
+
+        product_id = request.query_params.get('product')
+
+        reviews = Review.objects.select_related(
+            'user',
+            'product'
+        ).filter(product_id=product_id)
+
+        serializer = ReviewSerializer(
+            reviews,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+    def post(self, request):
+
+        serializer = ReviewSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+
+            serializer.save(user=request.user)
+
+            return Response({
+                'message': 'Review added successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class PaymentListView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+
+    def get(self, request):
+
+        payments = Payment.objects.filter(
+            order__user=request.user
+        )
+
+        serializer = PaymentSerializer(
+            payments,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+class OrderItemListView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+
+    def get(self, request):
+
+        order_items = OrderItem.objects.select_related(
+            'order',
+            'variant'
+        ).filter(order__user=request.user)
+
+        serializer = OrderItemSerializer(
+            order_items,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+
+class OrderListCreateView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+
+    def get(self, request):
+
+        orders = Order.objects.filter(
+            user=request.user
+        )
+
+        serializer = OrderSerializer(
+            orders,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+    @transaction.atomic
+    def post(self, request):
+
+        serializer = OrderSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+
+            serializer.save(
+                user=request.user,
+                order_number=str(uuid.uuid4())[:12]
+            )
+
+            return Response({
+                'message': 'Order created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class CouponListCreateView(APIView):
+
+    permission_classes = [IsAdminUser]
+
+
+    def get(self, request):
+
+        coupons = Coupon.objects.all()
+
+        serializer = CouponSerializer(
+            coupons,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+    def post(self, request):
+
+        serializer = CouponSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+
+            serializer.save()
+
+            return Response({
+                'message': 'Coupon created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class WishlistListCreateView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+
+    def get(self, request):
+
+        wishlist = Wishlist.objects.select_related(
+            'product'
+        ).filter(user=request.user)
+
+        serializer = WishlistSerializer(
+            wishlist,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+    def post(self, request):
+
+        serializer = WishlistSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+
+            serializer.save(user=request.user)
+
+            return Response({
+                'message': 'Added to wishlist',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class CartItemListCreateView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+
+    def get(self, request):
+
+        cart, created = Cart.objects.get_or_create(
+            user=request.user
+        )
+
+        cart_items = CartItem.objects.select_related(
+            'variant',
+            'variant__product'
+        ).filter(cart=cart)
+
+        serializer = CartItemSerializer(
+            cart_items,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+    def post(self, request):
+
+        cart, created = Cart.objects.get_or_create(
+            user=request.user
+        )
+
+        serializer = CartItemSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+
+            serializer.save(cart=cart)
+
+            return Response({
+                'message': 'Item added to cart',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class CartView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+
+    def get(self, request):
+
+        cart, created = Cart.objects.get_or_create(
+            user=request.user
+        )
+
+        serializer = CartSerializer(cart)
+
+        return Response(serializer.data)
+    
+
+
+class AddressListCreateView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+
+    def get(self, request):
+
+        addresses = Address.objects.filter(
+            user=request.user
+        )
+
+        serializer = AddressSerializer(
+            addresses,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+    def post(self, request):
+
+        serializer = AddressSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+
+            serializer.save(user=request.user)
+
+            return Response({
+                'message': 'Address created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+
+class ProductVariantDetailView(APIView):
+
+
+    # DYNAMIC PERMISSIONS
+    def get_permissions(self):
+
+        if self.request.method == 'GET':
+            return []
+
+        return [IsAdminUser()]
+
+
+    # SINGLE VARIANT
+    def get(self, request, sku):
+
+        try:
+
+            variant = ProductVariant.objects.select_related(
+                'product'
+            ).get(sku=sku)
+
+        except ProductVariant.DoesNotExist:
+
+            return Response({
+                'error': 'Variant not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ProductVariantSerializer(variant)
+
+        return Response(serializer.data)
+
+
+    # UPDATE VARIANT
+    def put(self, request, sku):
+
+        try:
+
+            variant = ProductVariant.objects.get(sku=sku)
+
+        except ProductVariant.DoesNotExist:
+
+            return Response({
+                'error': 'Variant not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ProductVariantSerializer(
+            variant,
+            data=request.data,
+            partial=True
+        )
+
+        if serializer.is_valid():
+
+            serializer.save()
+
+            return Response({
+                'message': 'Variant updated successfully',
+                'data': serializer.data
+            })
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+    # DELETE VARIANT
+    def delete(self, request, sku):
+
+        try:
+
+            variant = ProductVariant.objects.get(sku=sku)
+
+        except ProductVariant.DoesNotExist:
+
+            return Response({
+                'error': 'Variant not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        variant.delete()
+
+        return Response({
+            'message': 'Variant deleted successfully'
+        })
+
+
+# VARIANT LIST + CREATE
+class ProductVariantListCreateView(APIView):
+
+
+    # DYNAMIC PERMISSIONS
+    def get_permissions(self):
+
+        if self.request.method == 'GET':
+            return []
+
+        return [IsAdminUser()]
+
+
+    # GET VARIANTS
+    def get(self, request):
+
+        variants = ProductVariant.objects.select_related(
+            'product'
+        ).all()
+
+        serializer = ProductVariantSerializer(
+            variants,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+    # CREATE VARIANT
+    def post(self, request):
+
+        serializer = ProductVariantSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+
+            serializer.save()
+
+            return Response({
+                'message': 'Variant created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+# BRAND LIST + CREATE
+class BrandListCreateView(APIView):
+
+    parser_classes = (
+        MultiPartParser,
+        FormParser
+    )
+
+
+    # DYNAMIC PERMISSIONS
+    def get_permissions(self):
+
+        # PUBLIC ACCESS FOR GET
+        if self.request.method == 'GET':
+            return []
+
+        # ADMIN ACCESS FOR POST
+        return [IsAdminUser()]
+
+
+    # GET ALL BRANDS
+    def get(self, request):
+
+        brands = Brand.objects.all()
+
+        serializer = BrandSerializer(
+            brands,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+    # CREATE BRAND
+    def post(self, request):
+
+        serializer = BrandSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+
+            serializer.save()
+
+            return Response({
+                'message': 'Brand created successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+# BRAND DETAILS
+class BrandDetailView(APIView):
+
+    parser_classes = (
+        MultiPartParser,
+        FormParser
+    )
+
+
+    # DYNAMIC PERMISSIONS
+    def get_permissions(self):
+
+        # PUBLIC ACCESS FOR GET
+        if self.request.method == 'GET':
+            return []
+
+        # ADMIN ACCESS FOR PUT & DELETE
+        return [IsAdminUser()]
+
+
+    # GET SINGLE BRAND
+    def get(self, request, slug):
+
+        try:
+
+            brand = Brand.objects.get(slug=slug)
+
+        except Brand.DoesNotExist:
+
+            return Response({
+                'error': 'Brand not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = BrandSerializer(brand)
+
+        return Response(serializer.data)
+
+
+    # UPDATE BRAND
+    def put(self, request, slug):
+
+        try:
+
+            brand = Brand.objects.get(slug=slug)
+
+        except Brand.DoesNotExist:
+
+            return Response({
+                'error': 'Brand not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = BrandSerializer(
+            brand,
+            data=request.data,
+            partial=True
+        )
+
+        if serializer.is_valid():
+
+            serializer.save()
+
+            return Response({
+                'message': 'Brand updated successfully',
+                'data': serializer.data
+            })
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+    # DELETE BRAND
+    def delete(self, request, slug):
+
+        try:
+
+            brand = Brand.objects.get(slug=slug)
+
+        except Brand.DoesNotExist:
+
+            return Response({
+                'error': 'Brand not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        brand.delete()
+
+        return Response({
+            'message': 'Brand deleted successfully'
+        })
 
 # CATEGORY LIST + CREATE
 class CategoryListCreateView(APIView):
